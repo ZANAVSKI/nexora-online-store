@@ -2086,81 +2086,19 @@ if (document.readyState === "loading") {
         extSave(); showToast(EXT.language === "en" ? "English mode" : "ქართული რეჟიმი", "success");
     }
 
-    async function enhanceChat() {
-        const form = document.querySelector('#chat-form');
-        const input = document.querySelector('#chat-input');
-        const messages = document.querySelector('#chat-messages');
-        if (!form || !input || !messages || form.dataset.enhanced === 'live') return;
-        form.dataset.enhanced = 'live';
-
-        let activeTicket = null;
-        let busy = false;
-        const escText = function(v){return String(v ?? '');};
-
-        function renderReplies(ticket) {
-            if (!ticket) return;
-            messages.innerHTML = '';
-            (ticket.replies || []).forEach(function(m){
-                const msg = document.createElement('div');
-                msg.className = 'message ' + (m.role === 'admin' ? 'support-message' : 'user-message');
-                msg.textContent = escText(m.text);
-                messages.appendChild(msg);
-            });
-            messages.scrollTop = messages.scrollHeight;
+    function enhanceChat() {
+        const form = document.querySelector("#chat-form");
+        const input = document.querySelector("#chat-input");
+        const messages = document.querySelector("#chat-messages");
+        if (!form || !input || !messages || form.dataset.enhanced) return;
+        form.dataset.enhanced = "1";
+        function answer(text) {
+            const msg = document.createElement("div"); msg.className="message support-message"; msg.textContent=text; messages.appendChild(msg); messages.scrollTop=messages.scrollHeight;
         }
-
-        async function loadTickets() {
-            if (!window.NEXORA_API || !window.NEXORA_API.token()) return;
-            try {
-                const result = await window.NEXORA_API.request('/tickets');
-                const list = result.tickets || [];
-                if (list.length) {
-                    const open = list.find(function(t){ return t.status !== 'Closed'; }) || list[0];
-                    if (!activeTicket || activeTicket.id !== open.id || JSON.stringify(activeTicket.replies) !== JSON.stringify(open.replies)) {
-                        activeTicket = open;
-                        renderReplies(open);
-                    }
-                }
-            } catch(e) {}
-        }
-
-        async function sendMessage(text) {
-            text = String(text || '').trim();
-            if (!text || busy) return;
-            if (!window.NEXORA_API || !window.NEXORA_API.token()) {
-                showToast('ჩატისთვის ჯერ შედი ანგარიშში', 'error');
-                return;
-            }
-            busy = true;
-            try {
-                let result;
-                if (activeTicket && activeTicket.status !== 'Closed') {
-                    result = await window.NEXORA_API.request('/tickets/' + encodeURIComponent(activeTicket.id) + '/messages', {
-                        method:'POST',
-                        body:JSON.stringify({message:text})
-                    });
-                } else {
-                    result = await window.NEXORA_API.request('/tickets', {
-                        method:'POST',
-                        body:JSON.stringify({subject:'Live Support',message:text})
-                    });
-                }
-                if (result.ticket) activeTicket = result.ticket;
-                await loadTickets();
-                input.value = '';
-            } catch(e) {
-                showToast(e.message || 'Support message failed', 'error');
-            } finally { busy = false; }
-        }
-
-        form.addEventListener('submit', function(e){e.preventDefault();sendMessage(input.value);});
-        document.querySelectorAll('[data-chat]').forEach(function(b){
-            b.addEventListener('click', function(){sendMessage(b.textContent);});
-        });
-        const reset=document.querySelector('#chat-reset');
-        if(reset) reset.addEventListener('click',function(){messages.innerHTML='<div class="message support-message">გამარჯობა 👋<br>მოგვწერე და Support გუნდი გიპასუხებს.</div>';activeTicket=null;});
-        await loadTickets();
-        window.setInterval(loadTickets, 3000);
+        function send(text){ if(!text.trim())return; const user=document.createElement("div");user.className="message user-message";user.textContent=text;messages.appendChild(user);input.value="";messages.scrollTop=messages.scrollHeight;setTimeout(function(){const t=text.toLowerCase();if(t.includes("order")||t.includes("შეკვეთ"))answer("შეკვეთების სანახავად გახსენი Account → My Orders. თუ შეკვეთა ჯერ არ გაქვს, Checkout-ით შექმნი ახალს.");else if(t.includes("delivery")||t.includes("მიწოდ"))answer("Delivery Status-ში შეგიძლია ნახო შეკვეთის მიმდინარე ეტაპი.");else if(t.includes("price")||t.includes("ფას"))answer("ფასები მოცემულია პროდუქტის ბარათზე და კალათაში.");else answer("მადლობა შეტყობინებისთვის. ეს NEXORA Support-ის frontend demo-ია.");},450);}
+        form.addEventListener("submit",function(e){e.preventDefault();send(input.value);});
+        document.querySelectorAll("[data-chat]").forEach(function(b){b.addEventListener("click",function(){send(b.textContent);});});
+        const reset=document.querySelector("#chat-reset");if(reset)reset.addEventListener("click",function(){messages.innerHTML='<div class="message support-message">გამარჯობა 👋<br>მე NEXORA Support ვარ. რით შემიძლია დაგეხმარო?</div>';});
     }
 
     function updateCheckoutSummary() {
@@ -2193,15 +2131,119 @@ if (document.readyState === "loading") {
     }
 
     function wrapCheckout() {
-        const form = document.querySelector('#checkout-form');
-        if (!form) return;
-        form.dataset.enhanced = 'backend';
-        const deliverySelect = form.querySelector('select[name=\"delivery\"]');
-        if (deliverySelect && !deliverySelect.dataset.summaryBound) {
-            deliverySelect.dataset.summaryBound = '1';
-            deliverySelect.addEventListener('change', updateCheckoutSummary);
-        }
-        updateCheckoutSummary();
+        const form = document.querySelector("#checkout-form");
+        if (!form || form.dataset.backendEnhanced) return;
+        form.dataset.backendEnhanced = "1";
+
+        const deliverySelect = form.querySelector('select[name="delivery"]');
+        if (deliverySelect) deliverySelect.addEventListener("change", updateCheckoutSummary);
+
+        form.addEventListener("submit", async function (event) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+
+            if (!cart.length) {
+                showToast("კალათა ცარიელია", "error");
+                return;
+            }
+
+            const submitButton = form.querySelector('button[type="submit"]');
+            if (submitButton) {
+                submitButton.disabled = true;
+                submitButton.dataset.originalText = submitButton.innerHTML;
+                submitButton.innerHTML = "იქმნება შეკვეთა...";
+            }
+
+            try {
+                const data = new FormData(form);
+                const rawCart = cart.map(function (item) {
+                    return {
+                        id: Number(item.id),
+                        variantId: Number(item.variantId || 0),
+                        quantity: Math.max(1, Math.floor(Number(item.quantity) || 1))
+                    };
+                });
+
+                const subtotal = getCartTotal();
+                const deliveryMethod = String(data.get("delivery") || "standard");
+                const deliveryFee = deliveryMethod === "express" ? 10 : deliveryMethod === "pickup" ? 0 : 5;
+                const discount = EXT.promo ? Math.round(subtotal * Number(EXT.promo.discount || 0) / 100) : 0;
+
+                const payload = {
+                    items: rawCart,
+                    name: String(data.get("name") || "Guest").trim(),
+                    email: String(data.get("email") || "").trim(),
+                    phone: String(data.get("phone") || "").trim(),
+                    city: String(data.get("city") || "").trim(),
+                    address: String(data.get("address") || "").trim(),
+                    delivery: deliveryMethod,
+                    payment: String(data.get("payment") || "cash"),
+                    note: String(data.get("note") || "").trim(),
+                    discount: discount,
+                    promoCode: String(EXT.promo?.code || "")
+                };
+
+                if (!payload.name || !payload.phone || !payload.city || !payload.address) {
+                    showToast("გთხოვ ყველა საჭირო ველი შეავსო", "error");
+                    return;
+                }
+
+                const request = window.NEXORA_API && window.NEXORA_API.request
+                    ? window.NEXORA_API.request
+                    : async function (path, options) {
+                        const headers = Object.assign({ "Content-Type": "application/json" }, (options && options.headers) || {});
+                        const response = await fetch("/api" + path, Object.assign({}, options || {}, { headers: headers }));
+                        let body = null;
+                        try { body = await response.json(); } catch (error) {}
+                        if (!response.ok) throw new Error(body && body.error ? body.error : "შეკვეთა ვერ შეიქმნა");
+                        return body;
+                    };
+
+                const result = await request("/orders", {
+                    method: "POST",
+                    body: JSON.stringify(payload)
+                });
+
+                const order = result.order;
+                if (!order || !result.orderId) {
+                    throw new Error("სერვერმა შეკვეთის ნომერი არ დააბრუნა");
+                }
+
+                EXT.orders = Array.isArray(EXT.orders) ? EXT.orders : [];
+                EXT.orders.unshift(order);
+                EXT.orders = EXT.orders.slice(0, 50);
+                EXT.promo = null;
+                extSave();
+
+                cart = [];
+                saveStorage();
+                updateCartCount();
+                renderCart();
+                form.reset();
+                updateCheckoutSummary();
+                closeCheckout();
+                closeCart();
+
+                if (typeof addNotification === "function") {
+                    addNotification("შეკვეთა შეიქმნა", "Order #" + result.orderId + " წარმატებით დადასტურდა.");
+                }
+
+                showToast("შეკვეთა #" + result.orderId + " წარმატებით შეიქმნა", "success");
+
+                if (window.NEXORA_SHOW_ORDER_SUCCESS) {
+                    window.NEXORA_SHOW_ORDER_SUCCESS(order);
+                } else if (typeof openDelivery === "function") {
+                    setTimeout(function () { openDelivery(result.orderId); }, 350);
+                }
+            } catch (error) {
+                showToast(error && error.message ? error.message : "შეკვეთა ვერ შეიქმნა", "error");
+            } finally {
+                if (submitButton) {
+                    submitButton.disabled = false;
+                    submitButton.innerHTML = submitButton.dataset.originalText || "შეკვეთის დადასტურება →";
+                }
+            }
+        });
     }
 
     function wrapContactTicket() {

@@ -2132,59 +2132,118 @@ if (document.readyState === "loading") {
 
     function wrapCheckout() {
         const form = document.querySelector("#checkout-form");
-        if (!form || form.dataset.enhanced) return;
-        form.dataset.enhanced = "1";
+        if (!form || form.dataset.backendEnhanced) return;
+        form.dataset.backendEnhanced = "1";
 
         const deliverySelect = form.querySelector('select[name="delivery"]');
         if (deliverySelect) deliverySelect.addEventListener("change", updateCheckoutSummary);
 
-        form.addEventListener("submit", function (event) {
+        form.addEventListener("submit", async function (event) {
             event.preventDefault();
             event.stopImmediatePropagation();
-            if (!cart.length) { showToast("კალათა ცარიელია", "error"); return; }
 
-            const data = new FormData(form);
-            const subtotal = getCartTotal();
-            const deliveryMethod = data.get("delivery") || "standard";
-            const deliveryFee = deliveryMethod === "express" ? 10 : deliveryMethod === "pickup" ? 0 : 5;
-            const discount = EXT.promo ? Math.round(subtotal * EXT.promo.discount / 100) : 0;
-            const total = Math.max(0, subtotal - discount + deliveryFee);
-            const order = {
-                id: "NX" + Math.floor(100000 + Math.random() * 899999),
-                date: new Date().toLocaleString("ka-GE"),
-                items: cart.slice(),
-                subtotal: subtotal,
-                discount: discount,
-                deliveryFee: deliveryFee,
-                total: total,
-                name: String(data.get("name") || "").trim(),
-                phone: String(data.get("phone") || "").trim(),
-                city: String(data.get("city") || "").trim(),
-                address: String(data.get("address") || "").trim(),
-                delivery: deliveryMethod,
-                payment: String(data.get("payment") || "cash"),
-                note: String(data.get("note") || "").trim(),
-                status: "შეკვეთა დადასტურებულია",
-                progress: 25
-            };
+            if (!cart.length) {
+                showToast("კალათა ცარიელია", "error");
+                return;
+            }
 
-            EXT.orders.unshift(order);
-            EXT.orders = EXT.orders.slice(0, 20);
-            EXT.promo = null;
-            extSave();
-            cart = [];
-            saveStorage();
-            updateCartCount();
-            renderCart();
-            closeCheckout();
-            closeCart();
-            form.reset();
-            updateCheckoutSummary();
-            addNotification("შეკვეთა შეიქმნა", "Order #" + order.id + " წარმატებით დადასტურდა.");
-            showToast("შეკვეთა #" + order.id + " შეიქმნა", "success");
+            const submitButton = form.querySelector('button[type="submit"]');
+            if (submitButton) {
+                submitButton.disabled = true;
+                submitButton.dataset.originalText = submitButton.innerHTML;
+                submitButton.innerHTML = "იქმნება შეკვეთა...";
+            }
 
-            setTimeout(function () { openDelivery(order.id); }, 500);
-        }, true);
+            try {
+                const data = new FormData(form);
+                const rawCart = cart.map(function (item) {
+                    return {
+                        id: Number(item.id),
+                        variantId: Number(item.variantId || 0),
+                        quantity: Math.max(1, Math.floor(Number(item.quantity) || 1))
+                    };
+                });
+
+                const subtotal = getCartTotal();
+                const deliveryMethod = String(data.get("delivery") || "standard");
+                const deliveryFee = deliveryMethod === "express" ? 10 : deliveryMethod === "pickup" ? 0 : 5;
+                const discount = EXT.promo ? Math.round(subtotal * Number(EXT.promo.discount || 0) / 100) : 0;
+
+                const payload = {
+                    items: rawCart,
+                    name: String(data.get("name") || "Guest").trim(),
+                    email: String(data.get("email") || "").trim(),
+                    phone: String(data.get("phone") || "").trim(),
+                    city: String(data.get("city") || "").trim(),
+                    address: String(data.get("address") || "").trim(),
+                    delivery: deliveryMethod,
+                    payment: String(data.get("payment") || "cash"),
+                    note: String(data.get("note") || "").trim(),
+                    discount: discount,
+                    promoCode: String(EXT.promo?.code || "")
+                };
+
+                if (!payload.name || !payload.phone || !payload.city || !payload.address) {
+                    showToast("გთხოვ ყველა საჭირო ველი შეავსო", "error");
+                    return;
+                }
+
+                const request = window.NEXORA_API && window.NEXORA_API.request
+                    ? window.NEXORA_API.request
+                    : async function (path, options) {
+                        const headers = Object.assign({ "Content-Type": "application/json" }, (options && options.headers) || {});
+                        const response = await fetch("/api" + path, Object.assign({}, options || {}, { headers: headers }));
+                        let body = null;
+                        try { body = await response.json(); } catch (error) {}
+                        if (!response.ok) throw new Error(body && body.error ? body.error : "შეკვეთა ვერ შეიქმნა");
+                        return body;
+                    };
+
+                const result = await request("/orders", {
+                    method: "POST",
+                    body: JSON.stringify(payload)
+                });
+
+                const order = result.order;
+                if (!order || !result.orderId) {
+                    throw new Error("სერვერმა შეკვეთის ნომერი არ დააბრუნა");
+                }
+
+                EXT.orders = Array.isArray(EXT.orders) ? EXT.orders : [];
+                EXT.orders.unshift(order);
+                EXT.orders = EXT.orders.slice(0, 50);
+                EXT.promo = null;
+                extSave();
+
+                cart = [];
+                saveStorage();
+                updateCartCount();
+                renderCart();
+                form.reset();
+                updateCheckoutSummary();
+                closeCheckout();
+                closeCart();
+
+                if (typeof addNotification === "function") {
+                    addNotification("შეკვეთა შეიქმნა", "Order #" + result.orderId + " წარმატებით დადასტურდა.");
+                }
+
+                showToast("შეკვეთა #" + result.orderId + " წარმატებით შეიქმნა", "success");
+
+                if (window.NEXORA_SHOW_ORDER_SUCCESS) {
+                    window.NEXORA_SHOW_ORDER_SUCCESS(order);
+                } else if (typeof openDelivery === "function") {
+                    setTimeout(function () { openDelivery(result.orderId); }, 350);
+                }
+            } catch (error) {
+                showToast(error && error.message ? error.message : "შეკვეთა ვერ შეიქმნა", "error");
+            } finally {
+                if (submitButton) {
+                    submitButton.disabled = false;
+                    submitButton.innerHTML = submitButton.dataset.originalText || "შეკვეთის დადასტურება →";
+                }
+            }
+        });
     }
 
     function wrapContactTicket() {

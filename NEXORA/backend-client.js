@@ -55,13 +55,7 @@
     }
 
     if(form.id==='checkout-form'){
-      ev.preventDefault(); ev.stopImmediatePropagation();
-      let s=state(); const rawCart=JSON.parse(localStorage.getItem('nexora_cart')||'[]'); if(!rawCart.length){toast('კალათა ცარიელია','error');return;}
-      const user=s.auth?.registered?null:null; const data=new FormData(form); let discount=0; try{discount=s.promo?.discount?Math.round(rawCart.reduce((sum,x)=>{const p=(typeof products!=='undefined')?products.find(p=>Number(p.id)===Number(x.id)):null; return sum+(p?p.price*Number(x.quantity||1):0)},0)*Number(s.promo.discount)/100):0;}catch{}
-      try{
-        const result=await request('/orders',{method:'POST',body:JSON.stringify({items:rawCart,name:String(data.get('name')||'Guest'),email:String(data.get('email')||s.auth?.email||''),phone:String(data.get('phone')||''),city:String(data.get('city')||''),address:String(data.get('address')||''),delivery:String(data.get('delivery')||'standard'),payment:String(data.get('payment')||'cash'),note:String(data.get('note')||''),discount,promoCode:(s.promo?.code||'')})});
-        s.orders=s.orders||[]; if(result.order) s.orders.unshift(result.order); s.notifications=s.notifications||[]; s.notifications.unshift({id:Date.now(),title:'შეკვეთა შეიქმნა',body:'Order #'+result.orderId+' წარმატებით დადასტურდა.',time:new Date().toLocaleString('ka-GE')}); s.promo=null; saveState(s); localStorage.setItem('nexora_cart','[]'); if(typeof updateCartCount==='function') updateCartCount(); if(typeof renderCart==='function') renderCart(); toast('შეკვეთა #'+result.orderId+' შეიქმნა'); if(window.NEXORA_SHOW_ORDER_SUCCESS) window.NEXORA_SHOW_ORDER_SUCCESS(result.order);
-      }catch(e){toast(e.message,'error');}
+      // Checkout is handled by script.js wrapCheckout(), which talks directly to the backend.
       return;
     }
 
