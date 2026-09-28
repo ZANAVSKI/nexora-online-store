@@ -1,0 +1,14 @@
+{
+  "name": "nexora-store",
+  "version": "1.0.0",
+  "private": true,
+  "description": "NEXORA premium mobile store with zero-dependency Node.js + SQLite backend",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --no-warnings server.js",
+    "dev": "node --no-warnings --watch server.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

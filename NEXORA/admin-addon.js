@@ -1,0 +1,1 @@
+(()=>{const a=document.querySelector('.nav-actions');if(!a||document.getElementById('nexora-admin-nav'))return;const b=document.createElement('button');b.id='nexora-admin-nav';b.className='nexora-admin-nav-btn';b.type='button';b.innerHTML='<span>✦</span><span>Admin</span>';b.onclick=()=>location.href='/admin.html';a.appendChild(b);})();
