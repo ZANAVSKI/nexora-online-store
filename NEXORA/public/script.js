@@ -1584,6 +1584,10 @@ function initNexora() {
 }
 
 
+/* NEXORA public bridge for the standalone checkout hardening script. */
+window.NEXORA_GET_CART = function () { return cart; };
+window.NEXORA_SET_CART = function (next) { cart = Array.isArray(next) ? next : []; };
+
 /* =========================================================
    START
    ========================================================= */
